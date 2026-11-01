@@ -1,0 +1,68 @@
+name: Load a 1Password Environment
+description: >-
+  Export the variables of a 1Password Environment to later steps of the job
+  (via GITHUB_ENV), each value masked. Authenticates with a service account
+  scoped to that Environment, so no vault or item reference is involved.
+author: AprilNEA
+branding:
+  icon: lock
+  color: blue
+
+inputs:
+  service-account-token:
+    description: 1Password service account token with read access to the Environment.
+    required: true
+  environment-id:
+    description: >-
+      ID of the 1Password Environment (1Password app → Developer → View
+      Environments → Manage environment → Copy environment ID). Not a secret.
+    required: true
+  prefixes:
+    description: >-
+      Optional whitespace-separated list of name prefixes. When set, only the
+      Environment variables whose name starts with one of them are exported;
+      the rest are read but dropped. Empty exports every variable.
+    required: false
+    default: ""
+  cli-version:
+    description: 1Password CLI version to install. `op run --environment` needs 2.41.0 or later.
+    required: false
+    default: "2.41.1"
+
+runs:
+  using: composite
+  steps:
+    # Pinned to an immutable commit: this step runs next to the service-account
+    # token, so a repointed mutable tag must not be able to swap the code.
+    - name: Install 1Password CLI
+      uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+      with:
+        version: ${{ inputs.cli-version }}
+
+    # Which variables came from the Environment is decided by comparing the
+    # child's environment with a snapshot of this step's: a name that is new,
+    # or whose value changed, was injected by `op run`. The snapshot holds
+    # SHA-256 digests, never values, so the token this step carries is not
+    # written to disk.
+    #
+    # `op run` masks concealed values on the child's stdout, which would also
+    # rewrite the `::add-mask::` lines export.sh prints into
+    # `::add-mask::<concealed>` and leave the real values unmasked in later
+    # logs. So masking is turned off here and done by hand, line by line,
+    # before each value is written; the script prints nothing else.
+    - name: Read the Environment
+      shell: bash
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.service-account-token }}
+        OP_ENVIRONMENT_ID: ${{ inputs.environment-id }}
+        OP_EXPORT_PREFIXES: ${{ inputs.prefixes }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        : "${OP_ENVIRONMENT_ID:?environment-id is empty; set the repository variable it reads}"
+        : "${OP_SERVICE_ACCOUNT_TOKEN:?service-account-token is empty}"
+        OP_PARENT_ENV_DIGESTS="$(mktemp)"
+        export OP_PARENT_ENV_DIGESTS
+        bash "$ACTION_PATH/snapshot.sh" >"$OP_PARENT_ENV_DIGESTS"
+        op run --no-masking --environment "$OP_ENVIRONMENT_ID" -- bash "$ACTION_PATH/export.sh"
+        rm -f "$OP_PARENT_ENV_DIGESTS"

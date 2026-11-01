@@ -1,0 +1,82 @@
+name: GitHub App installation token
+description: >-
+  Mint a GitHub App installation token from an App's client ID and private
+  key, where the key may be base64-encoded (the form that survives pasting a
+  PEM into a secret store). Each PEM line is masked before the key reaches
+  actions/create-github-app-token.
+author: AprilNEA
+branding:
+  icon: key
+  color: blue
+
+inputs:
+  client-id:
+    description: The GitHub App's client ID (or numeric App ID).
+    required: true
+  private-key:
+    description: >-
+      The App's private key: either the PEM itself or its base64 encoding
+      (whitespace is ignored, so a key mangled by paste still decodes).
+    required: true
+  owner:
+    description: Optional GitHub owner for cross-repository tokens.
+    required: false
+    default: ""
+  repositories:
+    description: Optional comma- or newline-separated repository list for cross-repository tokens.
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: The minted installation token.
+    value: ${{ steps.app-token.outputs.token || steps.scoped-app-token.outputs.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Decode the private key
+      id: key
+      shell: bash
+      env:
+        PRIVATE_KEY: ${{ inputs.private-key }}
+      run: |
+        set -euo pipefail
+        : "${PRIVATE_KEY:?private-key is empty}"
+        case "$PRIVATE_KEY" in
+        *-----BEGIN*) key="$PRIVATE_KEY" ;;
+        *) key="$(printf '%s' "$PRIVATE_KEY" | tr -d '[:space:]' | base64 -d)" ;;
+        esac
+        case "$key" in
+        *-----BEGIN*) ;;
+        *)
+          echo "::error::private-key is neither a PEM nor the base64 of one"
+          exit 1
+          ;;
+        esac
+        while IFS= read -r line || [ -n "$line" ]; do
+          [ -n "$line" ] && echo "::add-mask::$line"
+        done <<<"$key"
+        {
+          echo 'pem<<__PEM__'
+          printf '%s\n' "$key"
+          echo '__PEM__'
+        } >>"$GITHUB_OUTPUT"
+
+    - name: Mint the token
+      id: app-token
+      if: inputs.owner == ''
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ steps.key.outputs.pem }}
+
+    - name: Mint the scoped token
+      id: scoped-app-token
+      if: inputs.owner != ''
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ steps.key.outputs.pem }}
+        owner: ${{ inputs.owner }}
+        repositories: ${{ inputs.repositories }}

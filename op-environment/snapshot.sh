@@ -7,13 +7,13 @@
 set -euo pipefail
 
 digest() {
-	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "$1" | sha256sum | cut -c1-64
-	else
-		printf '%s' "$1" | shasum -a 256 | cut -c1-64
-	fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -c1-64
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -c1-64
+  fi
 }
 
 for name in $(compgen -e); do
-	printf '%s %s\n' "$name" "$(digest "${!name}")"
+  printf '%s %s\n' "$name" "$(digest "${!name}")"
 done

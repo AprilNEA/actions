@@ -12,46 +12,46 @@ set -euo pipefail
 : "${GITHUB_ENV:?runs inside GitHub Actions}"
 
 digest() {
-	if command -v sha256sum >/dev/null 2>&1; then
-		printf '%s' "$1" | sha256sum | cut -c1-64
-	else
-		printf '%s' "$1" | shasum -a 256 | cut -c1-64
-	fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | cut -c1-64
+  else
+    printf '%s' "$1" | shasum -a 256 | cut -c1-64
+  fi
 }
 
 # Names bash and the runner change between any parent and child.
 skip() {
-	case "$1" in
-	_ | SHLVL | OLDPWD | PWD | OP_PARENT_ENV_DIGESTS | OP_EXPORT_PREFIXES) return 0 ;;
-	esac
-	return 1
+  case "$1" in
+    _ | SHLVL | OLDPWD | PWD | OP_PARENT_ENV_DIGESTS | OP_EXPORT_PREFIXES) return 0 ;;
+  esac
+  return 1
 }
 
 wanted() {
-	[ -z "${OP_EXPORT_PREFIXES:-}" ] && return 0
-	local prefix
-	for prefix in $OP_EXPORT_PREFIXES; do
-		case "$1" in "$prefix"*) return 0 ;; esac
-	done
-	return 1
+  [ -z "${OP_EXPORT_PREFIXES:-}" ] && return 0
+  local prefix
+  for prefix in $OP_EXPORT_PREFIXES; do
+    case "$1" in "$prefix"*) return 0 ;; esac
+  done
+  return 1
 }
 
 exported=0
 for name in $(compgen -e); do
-	skip "$name" && continue
-	value="${!name}"
-	if grep -qFx "${name} $(digest "$value")" "$OP_PARENT_ENV_DIGESTS"; then
-		continue
-	fi
-	wanted "$name" || continue
-	while IFS= read -r line || [ -n "$line" ]; do
-		[ -n "$line" ] && echo "::add-mask::$line"
-	done <<<"$value"
-	{
-		echo "${name}<<__OP_ENVIRONMENT__"
-		printf '%s\n' "$value"
-		echo "__OP_ENVIRONMENT__"
-	} >>"$GITHUB_ENV"
-	exported=$((exported + 1))
+  skip "$name" && continue
+  value="${!name}"
+  if grep -qFx "${name} $(digest "$value")" "$OP_PARENT_ENV_DIGESTS"; then
+    continue
+  fi
+  wanted "$name" || continue
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] && echo "::add-mask::$line"
+  done <<<"$value"
+  {
+    echo "${name}<<__OP_ENVIRONMENT__"
+    printf '%s\n' "$value"
+    echo "__OP_ENVIRONMENT__"
+  } >>"$GITHUB_ENV"
+  exported=$((exported + 1))
 done
 echo "Exported $exported variable(s) from the 1Password Environment"

@@ -22,7 +22,7 @@ jobs:
       - name: shellcheck
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
       - name: shfmt
-        run: git ls-files -z '*.sh' | xargs -0 shfmt -d -i 2 -ci
+        run: git ls-files -z '*.sh' | xargs -0 shfmt -d
 
   test:
     name: op-environment self-test
